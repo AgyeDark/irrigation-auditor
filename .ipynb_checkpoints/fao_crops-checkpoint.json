@@ -1,0 +1,46 @@
+{
+  "Vegetables": {
+    "Tomato": { "init": 0.6, "mid": 1.15, "end": 0.8 },
+    "Onion (Green)": { "init": 0.7, "mid": 1.00, "end": 1.0 },
+    "Onion (Dry)": { "init": 0.7, "mid": 1.05, "end": 0.75 },
+    "Pepper (Sweet)": { "init": 0.6, "mid": 1.05, "end": 0.9 },
+    "Pepper (Hot)": { "init": 0.6, "mid": 1.05, "end": 0.9 },
+    "Cabbage": { "init": 0.7, "mid": 1.05, "end": 0.95 },
+    "Carrot": { "init": 0.7, "mid": 1.05, "end": 0.95 },
+    "Cucumber": { "init": 0.6, "mid": 1.00, "end": 0.75 },
+    "Eggplant": { "init": 0.6, "mid": 1.05, "end": 0.9 },
+    "Okra": { "init": 0.3, "mid": 1.00, "end": 0.9 },
+    "Lettuce": { "init": 0.7, "mid": 1.00, "end": 0.95 },
+    "Spinach": { "init": 0.7, "mid": 1.00, "end": 0.95 },
+    "Watermelon": { "init": 0.4, "mid": 1.00, "end": 0.75 }
+  },
+  "Roots & Tubers": {
+    "Cassava (Year 1)": { "init": 0.3, "mid": 1.10, "end": 0.5 },
+    "Cassava (Year 2)": { "init": 0.3, "mid": 1.10, "end": 0.5 },
+    "Yam": { "init": 0.5, "mid": 1.10, "end": 0.8 },
+    "Sweet Potato": { "init": 0.5, "mid": 1.15, "end": 0.65 },
+    "Potato": { "init": 0.5, "mid": 1.15, "end": 0.75 }
+  },
+  "Cereals": {
+    "Maize (Grain)": { "init": 0.3, "mid": 1.20, "end": 0.6 },
+    "Maize (Sweet)": { "init": 0.3, "mid": 1.15, "end": 1.05 },
+    "Rice": { "init": 1.05, "mid": 1.20, "end": 0.9 },
+    "Sorghum": { "init": 0.3, "mid": 1.10, "end": 0.55 },
+    "Millet": { "init": 0.3, "mid": 1.00, "end": 0.3 }
+  },
+  "Fruit Trees": {
+    "Banana (Tropical)": { "init": 1.0, "mid": 1.20, "end": 1.1 },
+    "Plantain": { "init": 1.0, "mid": 1.15, "end": 1.1 },
+    "Cocoa": { "init": 1.0, "mid": 1.05, "end": 1.05 },
+    "Mango": { "init": 0.9, "mid": 0.95, "end": 0.95 },
+    "Citrus (Orange/Lime)": { "init": 0.7, "mid": 0.65, "end": 0.7 },
+    "Pineapple": { "init": 0.5, "mid": 0.30, "end": 0.3 },
+    "Cashew": { "init": 0.6, "mid": 0.85, "end": 0.7 },
+    "Oil Palm": { "init": 0.9, "mid": 1.00, "end": 1.0 }
+  },
+  "Legumes": {
+    "Groundnut (Peanut)": { "init": 0.4, "mid": 1.15, "end": 0.6 },
+    "Soybean": { "init": 0.4, "mid": 1.15, "end": 0.5 },
+    "Cowpea": { "init": 0.4, "mid": 1.05, "end": 0.6 }
+  }
+}
