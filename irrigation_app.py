@@ -4,6 +4,7 @@ import requests
 import json
 import plotly.graph_objects as go
 import os
+import time # Needed for the retry logic
 
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="FAO-56 Irrigation Audit", page_icon="💧", layout="wide")
@@ -77,101 +78,119 @@ st.sidebar.subheader("3. Pump Settings")
 pump_capacity = st.sidebar.number_input("Pump Capacity (Liters/min)", value=200)
 field_size = st.sidebar.number_input("Field Size (Acres)", value=1.0)
 
-# --- WEATHER ENGINE ---
+# --- WEATHER ENGINE (ROBUST & CACHED) ---
+@st.cache_data(ttl=3600) # Cache data for 1 hour to prevent Error 429
 def get_weather_data_safe(lat, lon):
-    # Manual URL construction
-    base_url = "https://api.open-meteo.com/v1/forecast"
-    query = f"?latitude={lat}&longitude={lon}&daily=et0_fao_evapotranspiration,precipitation_sum&timezone=GMT&past_days=2&forecast_days=5"
-    final_url = base_url + query
+    # Manual URL construction to prevent 'int+str' error
+    url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&daily=et0_fao_evapotranspiration,precipitation_sum&timezone=GMT&past_days=2&forecast_days=5"
     
-    response = requests.get(final_url)
-    response.raise_for_status()
-    data = response.json()
-    
-    df = pd.DataFrame({
-        "Date": data['daily']['time'],
-        "ETo": data['daily']['et0_fao_evapotranspiration'],
-        "Rain": data['daily']['precipitation_sum']
-    })
-    
-    # FIX: Convert Date strings to Real Datetime Objects to prevent chart errors
-    df['Date'] = pd.to_datetime(df['Date'])
-    
-    # Force numbers
-    df['ETo'] = pd.to_numeric(df['ETo'], errors='coerce').fillna(0.0)
-    df['Rain'] = pd.to_numeric(df['Rain'], errors='coerce').fillna(0.0)
-    
-    return df
+    # Retry Logic: Try 3 times before giving up
+    for attempt in range(3):
+        try:
+            response = requests.get(url, timeout=10)
+            
+            # If server says "Too Many Requests" (429), trigger the retry logic
+            if response.status_code == 429:
+                response.raise_for_status()
+                
+            response.raise_for_status()
+            data = response.json()
+            
+            df = pd.DataFrame({
+                "Date": data['daily']['time'],
+                "ETo": data['daily']['et0_fao_evapotranspiration'],
+                "Rain": data['daily']['precipitation_sum']
+            })
+            
+            # Safe Data Conversion
+            df['Date'] = pd.to_datetime(df['Date'])
+            
+            # Interpolate to fill small gaps (clouds), fill remaining NaNs with defaults
+            df['ETo'] = pd.to_numeric(df['ETo'], errors='coerce').interpolate().fillna(3.5)
+            df['Rain'] = pd.to_numeric(df['Rain'], errors='coerce').fillna(0.0)
+            
+            return df
+            
+        except requests.exceptions.RequestException as e:
+            # If it's a 429 or connection error, wait and try again
+            time.sleep(2 ** attempt) # Wait 1s, then 2s, then 4s
+            continue
+            
+    # If all 3 attempts fail
+    st.error("⚠️ Weather Satellite is busy. Please wait a minute and try again.")
+    return pd.DataFrame()
 
 # --- MAIN LOGIC ---
 if st.button("Run Irrigation Audit", type="primary"):
     display_name = crop_name if crop_name else "Unknown Crop"
     
     with st.spinner(f"🛰️ Auditing {display_name} in {location_name}..."):
-        try:
-            # 1. Get Data
-            df = get_weather_data_safe(lat, lon)
-            
-            # 2. Calculate Balance
-            df['Crop_Water_Need'] = df['ETo'] * float(kc)
-            df['Irrigation_Req'] = (df['Crop_Water_Need'] - df['Rain']).clip(lower=0)
-            
-            # 3. Calculate Pump Time
-            total_liters = df['Irrigation_Req'] * 4046.86 * float(field_size)
-            df['Pump_Hours'] = total_liters / (int(pump_capacity) * 60)
-            
-            # --- DASHBOARD UI ---
-            today = df.iloc[2]
-            
-            col1, col2, col3, col4 = st.columns(4)
-            col1.metric("Today's Rain", f"{today['Rain']:.1f} mm")
-            col2.metric("Crop Thirst (ETc)", f"{today['Crop_Water_Need']:.1f} mm")
-            col3.metric("Irrigation Needed", f"{today['Irrigation_Req']:.1f} mm", 
-                        delta="Deficit" if today['Irrigation_Req'] > 0 else "Balanced", delta_color="inverse")
-            
-            hrs = int(today['Pump_Hours'])
-            mins = int((today['Pump_Hours'] % 1) * 60)
-            col4.metric("Pump Runtime", f"{hrs}h {mins}m")
+        # 1. Get Data
+        df = get_weather_data_safe(lat, lon)
+        
+        if not df.empty:
+            try:
+                # 2. Calculate Balance
+                df['Crop_Water_Need'] = df['ETo'] * float(kc)
+                df['Irrigation_Req'] = (df['Crop_Water_Need'] - df['Rain']).clip(lower=0)
+                
+                # 3. Calculate Pump Time
+                total_liters = df['Irrigation_Req'] * 4046.86 * float(field_size)
+                df['Pump_Hours'] = total_liters / (int(pump_capacity) * 60)
+                
+                # --- DASHBOARD UI ---
+                today = df.iloc[2]
+                
+                col1, col2, col3, col4 = st.columns(4)
+                col1.metric("Today's Rain", f"{today['Rain']:.1f} mm")
+                col2.metric("Crop Thirst (ETc)", f"{today['Crop_Water_Need']:.1f} mm")
+                col3.metric("Irrigation Needed", f"{today['Irrigation_Req']:.1f} mm", 
+                            delta="Deficit" if today['Irrigation_Req'] > 0 else "Balanced", delta_color="inverse")
+                
+                hrs = int(today['Pump_Hours'])
+                mins = int((today['Pump_Hours'] % 1) * 60)
+                col4.metric("Pump Runtime", f"{hrs}h {mins}m")
+
+                st.divider()
+
+                col_chart, col_advice = st.columns([2, 1])
+                
+                with col_chart:
+                    st.subheader("7-Day Water Balance")
+                    fig = go.Figure()
+                    fig.add_trace(go.Bar(x=df['Date'], y=df['Rain'], name='Rainfall', marker_color='#3b82f6'))
+                    fig.add_trace(go.Bar(x=df['Date'], y=df['Crop_Water_Need'], name='Crop Thirst', marker_color='#f97316', opacity=0.7))
+                    fig.add_trace(go.Scatter(x=df['Date'], y=df['Irrigation_Req'], name='Irrigation Needed', 
+                                           line=dict(color='#ef4444', width=3), mode='lines+markers'))
+                    # Vertical line
+                    fig.add_vline(x=today['Date'], line_dash="dash", line_color="green", annotation_text="Today")
+                    
+                    fig.update_layout(height=400, margin=dict(t=20, b=20), hovermode="x unified", legend=dict(orientation="h", y=1.1))
+                    st.plotly_chart(fig, use_container_width=True)
+
+                with col_advice:
+                    st.subheader("📝 Recommendation")
+                    if today['Irrigation_Req'] > 0:
+                        st.error(f"""
+                        **Status: WATER STRESS**
+                        Plan: Run pump for **{hrs}h {mins}m**.
+                        Apply **{int(total_liters.iloc[2])} Liters**.
+                        """)
+                    else:
+                        st.success("**Status: ADEQUATE.** No irrigation needed.")
+                    
+                    with st.expander("Data Table"):
+                        st.dataframe(df.style.format({
+                            "ETo": "{:.2f}",
+                            "Rain": "{:.1f}",
+                            "Crop_Water_Need": "{:.1f}",
+                            "Irrigation_Req": "{:.1f}",
+                            "Pump_Hours": "{:.2f}"
+                        }))
+
+            except Exception as e:
+                st.error(f"Calculation Error: {e}")
 
             st.divider()
-
-            col_chart, col_advice = st.columns([2, 1])
-            
-            with col_chart:
-                st.subheader("7-Day Water Balance")
-                
-                # Simplified Chart Logic
-                fig = go.Figure()
-                fig.add_trace(go.Bar(x=df['Date'], y=df['Rain'], name='Rainfall', marker_color='#3b82f6'))
-                fig.add_trace(go.Bar(x=df['Date'], y=df['Crop_Water_Need'], name='Crop Thirst', marker_color='#f97316', opacity=0.7))
-                fig.add_trace(go.Scatter(x=df['Date'], y=df['Irrigation_Req'], name='Irrigation Needed', 
-                                       line=dict(color='#ef4444', width=3), mode='lines+markers'))
-                
-                # Removed add_vline to prevent 'int+str' error
-                
-                fig.update_layout(height=400, margin=dict(t=20, b=20), hovermode="x unified", legend=dict(orientation="h", y=1.1))
-                st.plotly_chart(fig, use_container_width=True)
-
-            with col_advice:
-                st.subheader("📝 Recommendation")
-                if today['Irrigation_Req'] > 0:
-                    st.error(f"""
-                    **Status: WATER STRESS**
-                    Plan: Run pump for **{hrs}h {mins}m**.
-                    Apply **{int(total_liters.iloc[2])} Liters**.
-                    """)
-                else:
-                    st.success("**Status: ADEQUATE.** No irrigation needed.")
-                
-                with st.expander("Data Table"):
-                    st.dataframe(df.style.format({
-                        "ETo": "{:.2f}",
-                        "Rain": "{:.1f}",
-                        "Crop_Water_Need": "{:.1f}",
-                        "Irrigation_Req": "{:.1f}",
-                        "Pump_Hours": "{:.2f}"
-                    }))
-
-        except Exception as e:
-            st.error(f"Connection Error: {e}")
+st.markdown("<p style='text-align: center; color: #888888;'>© 2025 Agyei Darko | Smart Irrigation Auditor </p>", unsafe_allow_html=True)
             
