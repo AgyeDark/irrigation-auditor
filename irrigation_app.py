@@ -165,21 +165,21 @@ if st.button("Run Irrigation Audit", type="primary"):
                     
                     # FIX: Convert Timestamp to String to prevent Pandas/Plotly math conflict
                     today_str = today['Date'].strftime('%Y-%m-%d')
+                    
+                    # Add the vertical line (no annotation here to avoid the bug)
                     fig.add_vline(x=today_str, line_dash="dash", line_color="green")
-
-# Add the annotation separately, positioned at the top of the plot
-fig.add_annotation(
-    x=today_str,
-    y=1,  # Top of the plot
-    yref="paper",  # Relative to the entire figure height (0=bottom, 1=top)
-    text="Today",
-    showarrow=False,
-    font=dict(color="green", size=12),
-    align="center",
-    yanchor="bottom"  # Anchor below the text to avoid overlapping the top edge
-)
-    
-# Existing layout updates remain the same...
+                    
+                    # Add the annotation separately, positioned at the top of the plot
+                    fig.add_annotation(
+                        x=today_str,
+                        y=1,  # Top of the plot
+                        yref="paper",  # Relative to the entire figure height (0=bottom, 1=top)
+                        text="Today",
+                        showarrow=False,
+                        font=dict(color="green", size=12),
+                        align="center",
+                        yanchor="bottom"  # Anchor below the text to avoid overlapping the top edge
+                    )
                     
                     fig.update_layout(height=400, margin=dict(t=20, b=20), hovermode="x unified", legend=dict(orientation="h", y=1.1))
                     st.plotly_chart(fig, use_container_width=True)
