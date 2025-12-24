@@ -4,7 +4,7 @@ import requests
 import json
 import plotly.graph_objects as go
 import os
-import time # Needed for the retry logic
+import time
 
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="FAO-56 Irrigation Audit", page_icon="💧", layout="wide")
@@ -79,17 +79,13 @@ pump_capacity = st.sidebar.number_input("Pump Capacity (Liters/min)", value=200)
 field_size = st.sidebar.number_input("Field Size (Acres)", value=1.0)
 
 # --- WEATHER ENGINE (ROBUST & CACHED) ---
-@st.cache_data(ttl=3600) # Cache data for 1 hour to prevent Error 429
+@st.cache_data(ttl=3600)
 def get_weather_data_safe(lat, lon):
-    # Manual URL construction to prevent 'int+str' error
     url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&daily=et0_fao_evapotranspiration,precipitation_sum&timezone=GMT&past_days=2&forecast_days=5"
     
-    # Retry Logic: Try 3 times before giving up
     for attempt in range(3):
         try:
             response = requests.get(url, timeout=10)
-            
-            # If server says "Too Many Requests" (429), trigger the retry logic
             if response.status_code == 429:
                 response.raise_for_status()
                 
@@ -102,21 +98,16 @@ def get_weather_data_safe(lat, lon):
                 "Rain": data['daily']['precipitation_sum']
             })
             
-            # Safe Data Conversion
             df['Date'] = pd.to_datetime(df['Date'])
-            
-            # Interpolate to fill small gaps (clouds), fill remaining NaNs with defaults
             df['ETo'] = pd.to_numeric(df['ETo'], errors='coerce').interpolate().fillna(3.5)
             df['Rain'] = pd.to_numeric(df['Rain'], errors='coerce').fillna(0.0)
             
             return df
             
         except requests.exceptions.RequestException as e:
-            # If it's a 429 or connection error, wait and try again
-            time.sleep(2 ** attempt) # Wait 1s, then 2s, then 4s
+            time.sleep(2 ** attempt)
             continue
             
-    # If all 3 attempts fail
     st.error("⚠️ Weather Satellite is busy. Please wait a minute and try again.")
     return pd.DataFrame()
 
@@ -125,7 +116,6 @@ if st.button("Run Irrigation Audit", type="primary"):
     display_name = crop_name if crop_name else "Unknown Crop"
     
     with st.spinner(f"🛰️ Auditing {display_name} in {location_name}..."):
-        # 1. Get Data
         df = get_weather_data_safe(lat, lon)
         
         if not df.empty:
@@ -162,8 +152,10 @@ if st.button("Run Irrigation Audit", type="primary"):
                     fig.add_trace(go.Bar(x=df['Date'], y=df['Crop_Water_Need'], name='Crop Thirst', marker_color='#f97316', opacity=0.7))
                     fig.add_trace(go.Scatter(x=df['Date'], y=df['Irrigation_Req'], name='Irrigation Needed', 
                                            line=dict(color='#ef4444', width=3), mode='lines+markers'))
-                    # Vertical line
-                    fig.add_vline(x=today['Date'], line_dash="dash", line_color="green", annotation_text="Today")
+                    
+                    # FIX: Convert Timestamp to String to prevent Pandas/Plotly math conflict
+                    today_str = today['Date'].strftime('%Y-%m-%d')
+                    fig.add_vline(x=today_str, line_dash="dash", line_color="green", annotation_text="Today")
                     
                     fig.update_layout(height=400, margin=dict(t=20, b=20), hovermode="x unified", legend=dict(orientation="h", y=1.1))
                     st.plotly_chart(fig, use_container_width=True)
@@ -193,4 +185,3 @@ if st.button("Run Irrigation Audit", type="primary"):
 
             st.divider()
 st.markdown("<p style='text-align: center; color: #888888;'>© 2025 Agyei Darko | Smart Irrigation Auditor </p>", unsafe_allow_html=True)
-            
